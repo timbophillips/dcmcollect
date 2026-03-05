@@ -13,6 +13,8 @@ This repository provides a PowerShell script, `Collect-DicomMedia.ps1`, that:
 - Copies accepted files into a sequentially named media folder.
 - Writes `catalogue.csv` mapping output files back to source paths.
 - Builds a destination `DICOMDIR` with `dcmmkdir`.
+- Optionally bundles Weasis into the destination and creates one-click launchers.
+- Supports a Weasis-only mode for already prepared destination folders.
 
 ## Requirements
 
@@ -43,11 +45,35 @@ Optional media subfolder name:
 .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Subdir "IMAGES"
 ```
 
+Bundle Weasis from a local zip or folder:
+
+```powershell
+.\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis
+```
+
+Or provide an explicit package path:
+
+```powershell
+.\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis -WeasisSource "C:\tools\weasis-portable.zip"
+```
+
+Package Weasis only into an existing destination folder (no DICOM copy/rebuild):
+
+```powershell
+.\Collect-DicomMedia.ps1 -Dest "C:\output_media" -WeasisOnly
+```
+
 ### Parameters
 
 - `-Src` (required): Source root directory to scan.
 - `-Dest` (required): Output root directory.
 - `-Subdir` (optional, default: `IMAGES`): Subfolder under `-Dest` where copied DICOM files are placed.
+- `-PackageWeasis` (optional): If set, package Weasis into the destination folder.
+- `-WeasisSource` (optional): Path to a Weasis folder or `.zip` package.
+  - If omitted and `-PackageWeasis` is set, the script uses `weasis-portable.zip` from the script folder.
+- `-WeasisOnly` (optional): Package Weasis and launchers only. Skips source scan, copy, catalogue, and DICOMDIR generation.
+  - Requires `-Dest` to already exist.
+  - Implies `-PackageWeasis`.
 
 ## Output
 
@@ -56,6 +82,14 @@ Given `-Dest C:\output_media` and default `-Subdir IMAGES`, the script creates:
 - `C:\output_media\IMAGES\00000001`, `00000002`, ... (copied DICOM files)
 - `C:\output_media\catalogue.csv`
 - `C:\output_media\DICOMDIR`
+
+If `-PackageWeasis` is used:
+
+- `C:\output_media\weasis\...` (copied/extracted Weasis files)
+- `C:\output_media\Launch-Weasis.ps1`
+- `C:\output_media\Launch-Weasis.cmd`
+
+If `-WeasisOnly` is used, existing DICOM content is left as-is and only the Weasis package/launchers are updated.
 
 `catalogue.csv` columns:
 
@@ -83,6 +117,18 @@ In addition to filesystem recursion, the script:
 
 This improves completeness when source media includes index files.
 
+## Weasis Packaging
+
+When packaging is enabled, the script:
+
+- Copies or extracts Weasis under `Dest\weasis`.
+- Locates a `weasis*.exe` executable inside that folder.
+- Generates launchers at destination root:
+  - `Launch-Weasis.cmd` for end users
+  - `Launch-Weasis.ps1` for direct PowerShell use
+
+The launcher opens `Dest\DICOMDIR` when available, and falls back to `Dest\Subdir` if needed.
+
 ## Notes
 
 - Paths are handled with `-LiteralPath` where appropriate.
@@ -101,6 +147,9 @@ This improves completeness when source media includes index files.
 
 - `dcmmkdir` warnings/errors:
   - Verify copied files under `Dest\Subdir` are readable and DICOM-compliant.
+
+- `Unable to find Weasis executable under: ...`
+  - Confirm your package contains a Windows launcher executable (for example `weasis*.exe` or `viewer-win32.exe`) in its extracted tree.
 
 ## License
 

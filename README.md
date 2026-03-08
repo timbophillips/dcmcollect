@@ -138,6 +138,15 @@ When packaging is enabled, the script:
 
 The launcher opens `Dest\DICOMDIR` when available, and falls back to `Dest\Subdir` if needed.
 
+Important: Weasis portable launchers do not reliably load local media when given a raw file path argument.
+The generated launcher uses a Weasis startup command string instead:
+
+- ``$dicom:get -l "<path-to-DICOMDIR>"``
+
+If `DICOMDIR` is missing, it falls back to:
+
+- ``$dicom:get -l "<path-to-media-folder>"``
+
 ## Notes
 
 - Paths are handled with `-LiteralPath` where appropriate.

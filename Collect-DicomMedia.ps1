@@ -243,27 +243,34 @@ function Install-WeasisPackage {
 
     $weasisExe = $exeCandidates[0].FullName
 
+    # Keep launcher portable by resolving executable at runtime from destination root.
+    $weasisExeRel = $weasisExe.Substring($DestinationRoot.Length).TrimStart('\\','/')
+
     $launcherPs1 = Join-Path $DestinationRoot "Launch-Weasis.ps1"
     $launcherCmd = Join-Path $DestinationRoot "Launch-Weasis.cmd"
 
     $ps1Content = @"
 `$ErrorActionPreference = "Stop"
 `$destRoot = Split-Path -Parent `$MyInvocation.MyCommand.Path
-`$weasisExe = "$weasisExe"
-`$dicomdir = "$DicomdirPath"
+`$weasisExe = Join-Path `$destRoot "$weasisExeRel"
+`$dicomdir = Join-Path `$destRoot "DICOMDIR"
 `$mediaDir = Join-Path `$destRoot "$MediaSubdir"
 
 if (-not (Test-Path -LiteralPath `$weasisExe -PathType Leaf)) {
     throw "Weasis executable not found: `$weasisExe"
 }
 
-# Prefer DICOMDIR; fallback to media folder if DICOMDIR is missing.
+# Weasis portable launchers only forward arguments that start with '$' or 'weasis://'.
+# Use an encoded weasis:// URI and include IMAGES as fallback input.
 if (Test-Path -LiteralPath `$dicomdir -PathType Leaf) {
-    & `$weasisExe `$dicomdir
+    `$startupCmd = ('$dicom:get -l "{0}" -l "{1}"' -f (`$dicomdir -replace '\\', '/'), (`$mediaDir -replace '\\', '/'))
 }
 else {
-    & `$weasisExe `$mediaDir
+    `$startupCmd = ('$dicom:get -l "{0}"' -f (`$mediaDir -replace '\\', '/'))
 }
+
+`$startupArg = ('weasis://?{0}' -f [uri]::EscapeDataString(`$startupCmd))
+& `$weasisExe `$startupArg
 "@
 
     Set-Content -LiteralPath $launcherPs1 -Encoding ASCII -Value $ps1Content

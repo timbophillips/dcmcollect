@@ -106,6 +106,8 @@ function Invoke-DeidentifyDicom {
     $args = @(
         '-q',
         '-nb',
+        '-ie',
+        '-imt',
         '-ma', '(0010,0010)=ANON^PATIENT',
         '-ma', '(0010,0020)=ANONID',
         '-ma', '(0010,0030)=',
@@ -432,6 +434,7 @@ $dicomdirPath = Join-Path $DestFull "DICOMDIR"
 $dicomdirRefs = @()
 $copiedCount = 0
 $deidentifiedCount = 0
+$deidentifyErrorCount = 0
 
 if (-not $WeasisOnly) {
     $discoveryWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -470,6 +473,13 @@ if (-not $WeasisOnly) {
     foreach ($f in $candidateFiles) {
         $processedCandidates++
 
+        # Skip source directory records; we always generate a fresh DICOMDIR in destination.
+        if ((Split-Path -Leaf $f) -ieq 'DICOMDIR') {
+            Write-Output ("Skipping source DICOMDIR: {0}" -f $f)
+            Write-Output ("PROGRESS|PROCESSED={0}|COPIED={1}|CURRENT={2}" -f $processedCandidates, ($i - 1), $f)
+            continue
+        }
+
         if (-not $seen.Add($f)) {
             Write-Output ("PROGRESS|PROCESSED={0}|COPIED={1}|CURRENT={2}" -f $processedCandidates, ($i - 1), $f)
             continue
@@ -484,9 +494,15 @@ if (-not $WeasisOnly) {
             Write-Output ("Copied [{0}] {1} <= {2}" -f $i, $outRel, $f)
 
             if ($Deidentify) {
-                Invoke-DeidentifyDicom -FilePath $outAbs -DcmodifyExe $dcmodify
-                $deidentifiedCount++
-                Write-Output ("De-identified [{0}] {1}" -f $deidentifiedCount, $outRel)
+                try {
+                    Invoke-DeidentifyDicom -FilePath $outAbs -DcmodifyExe $dcmodify
+                    $deidentifiedCount++
+                    Write-Output ("De-identified [{0}] {1}" -f $deidentifiedCount, $outRel)
+                }
+                catch {
+                    $deidentifyErrorCount++
+                    Write-Warning ("De-identification failed for '{0}': {1}" -f $outRel, $_.Exception.Message)
+                }
             }
 
             # CSV-escape quotes
@@ -570,6 +586,9 @@ else {
     Write-Host "DICOMDIR references discovered: $dicomdirRefCount"
     if ($Deidentify) {
         Write-Host "De-identified files: $deidentifiedCount"
+        if ($deidentifyErrorCount -gt 0) {
+            Write-Warning "De-identification errors: $deidentifyErrorCount (files were still copied)"
+        }
     }
 }
 Write-Host "Media folder: $mediaDir"

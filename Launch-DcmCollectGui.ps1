@@ -614,6 +614,7 @@ $btnRun.Add_Click({
         $cmdPath = $null
         $cmdArgList = @()
         $cmdArgsDisplay = $null
+        $cmdArgString = ""
 
         if (Test-Path -LiteralPath $backendExe -PathType Leaf) {
             $cmdPath = $backendExe
@@ -628,7 +629,8 @@ $btnRun.Add_Click({
             throw "Backend not found. Expected one of: $backendExe or $backendPs1"
         }
 
-        $cmdArgsDisplay = ($cmdArgList | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+        $cmdArgString = ($cmdArgList | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+        $cmdArgsDisplay = $cmdArgString
 
         $txtLog.Clear()
         $script:lastDest = $txtDest.Text.Trim()
@@ -647,10 +649,11 @@ $btnRun.Add_Click({
         Update-Summary -State "Starting"
         Add-LogLine ("Command: {0} {1}" -f $cmdPath, $cmdArgsDisplay)
         Write-Diagnostic ("ArgCount=" + $cmdArgList.Count + "; Args=" + ($cmdArgList -join " | "))
+        Write-Diagnostic ("ArgString=" + $cmdArgString)
 
         $startParams = @{
             FilePath               = $cmdPath
-            ArgumentList           = $cmdArgList
+            ArgumentList           = $cmdArgString
             WorkingDirectory       = $scriptDir
             WindowStyle            = 'Hidden'
             PassThru               = $true

@@ -1,4 +1,5 @@
-﻿2026-03-08 13:50:34.171 GUI started
-2026-03-08 13:50:56.379 Run clicked
-2026-03-08 13:50:56.614 ArgCount=9; Args=-Src | C:\Users\timot\OneDrive\SyncLocal\medicolegal-current\baghadadi\imaging | -Dest | C:\Users\timot\Downloads\e3 | -Subdir | IMAGES | -PackageWeasis | -VerifyDicomdir | -Deidentify
-2026-03-08 13:50:57.023 Backend process started
+﻿2026-03-08 17:11:38.808 GUI started
+2026-03-08 17:12:15.934 Run clicked
+2026-03-08 17:12:16.063 ArgCount=9; Args=-Src | C:\Users\timot\OneDrive\SyncLocal\medicolegal-current\baghadadi\imaging\Bankstown Imaging\IMAGES\PAT00000\ST000000 | -Dest | C:\Users\timot\Downloads\i-2 | -Subdir | IMAGES | -PackageWeasis | -VerifyDicomdir | -Deidentify
+2026-03-08 17:12:16.067 ArgString=-Src "C:\Users\timot\OneDrive\SyncLocal\medicolegal-current\baghadadi\imaging\Bankstown Imaging\IMAGES\PAT00000\ST000000" -Dest C:\Users\timot\Downloads\i-2 -Subdir IMAGES -PackageWeasis -VerifyDicomdir -Deidentify
+2026-03-08 17:12:16.374 Backend process started

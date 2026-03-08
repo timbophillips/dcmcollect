@@ -12,6 +12,7 @@
 .USAGE
   .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media"
   .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Subdir "IMAGES"
+    .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Deidentify
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis -WeasisSource "C:\tools\weasis-portable.zip"
     .\Collect-DicomMedia.ps1 -Dest "C:\output_media" -WeasisOnly
@@ -43,6 +44,9 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]$VerifyDicomdir
+,
+    [Parameter(Mandatory = $false)]
+    [switch]$Deidentify
 )
 
 Set-StrictMode -Version Latest
@@ -90,6 +94,61 @@ $binDir    = Join-Path $scriptDir "bin"
 $dcmftest  = Join-Path $binDir "dcmftest.exe"
 $dcmdump   = Join-Path $binDir "dcmdump.exe"
 $dcmmkdir  = Join-Path $binDir "dcmmkdir.exe"
+$dcmodify  = Join-Path $binDir "dcmodify.exe"
+
+function Invoke-DeidentifyDicom {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$DcmodifyExe
+    )
+
+    # Basic de-identification profile: overwrite a core set of direct identifiers.
+    $args = @(
+        '-q',
+        '-nb',
+        '-ma', '(0010,0010)=ANON^PATIENT',
+        '-ma', '(0010,0020)=ANONID',
+        '-ma', '(0010,0030)=',
+        '-ma', '(0010,0040)=O',
+        '-ma', '(0010,1000)=',
+        '-ma', '(0010,1040)=',
+        '-ma', '(0008,0050)=',
+        '-ma', '(0008,0090)=',
+        '-ma', '(0008,0080)=',
+        '-ma', '(0008,0081)=',
+        '-ma', '(0008,1010)=',
+        '-ma', '(0008,1030)=ANON_STUDY',
+        '-ma', '(0008,103E)=ANON_SERIES',
+        $FilePath
+    )
+
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $startParams = @{
+            FilePath               = $DcmodifyExe
+            ArgumentList           = $args
+            NoNewWindow            = $true
+            Wait                   = $true
+            PassThru               = $true
+            RedirectStandardOutput = $outFile
+            RedirectStandardError  = $errFile
+        }
+        $proc = Start-Process @startParams
+
+        if ($proc.ExitCode -ne 0) {
+            $errText = (Get-Content -LiteralPath $errFile -ErrorAction SilentlyContinue | Out-String).Trim()
+            if ([string]::IsNullOrWhiteSpace($errText)) {
+                throw "dcmodify failed with exit code $($proc.ExitCode) for file: $FilePath"
+            }
+            throw "dcmodify failed with exit code $($proc.ExitCode) for file: $FilePath`n$errText"
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+    }
+}
 
 function Test-IsDicom {
     param(
@@ -321,6 +380,9 @@ $SrcFull  = $null
 
 if ($WeasisOnly) {
     $PackageWeasis = $true
+    if ($Deidentify) {
+        Write-Warning "-Deidentify is ignored in -WeasisOnly mode because no DICOM copy step is run."
+    }
 }
 
 if ($PackageWeasis -and [string]::IsNullOrWhiteSpace($WeasisSource)) {
@@ -347,6 +409,9 @@ if (-not $WeasisOnly) {
     if (-not (Test-Path -LiteralPath $dcmmkdir -PathType Leaf)) {
         throw "Missing DCMTK binary: $dcmmkdir"
     }
+    if ($Deidentify -and (-not (Test-Path -LiteralPath $dcmodify -PathType Leaf))) {
+        throw "Missing DCMTK binary required for de-identification: $dcmodify"
+    }
 
     $SrcFull = Resolve-FullPath $Src
     if (-not (Test-Path -LiteralPath $SrcFull -PathType Container)) {
@@ -366,6 +431,7 @@ $catalog = Join-Path $DestFull "catalogue.csv"
 $dicomdirPath = Join-Path $DestFull "DICOMDIR"
 $dicomdirRefs = @()
 $copiedCount = 0
+$deidentifiedCount = 0
 
 if (-not $WeasisOnly) {
     $discoveryWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -416,6 +482,12 @@ if (-not $WeasisOnly) {
 
             Copy-Item -LiteralPath $f -Destination $outAbs -Force
             Write-Output ("Copied [{0}] {1} <= {2}" -f $i, $outRel, $f)
+
+            if ($Deidentify) {
+                Invoke-DeidentifyDicom -FilePath $outAbs -DcmodifyExe $dcmodify
+                $deidentifiedCount++
+                Write-Output ("De-identified [{0}] {1}" -f $deidentifiedCount, $outRel)
+            }
 
             # CSV-escape quotes
             $escaped = $f.Replace('"','""')
@@ -496,6 +568,9 @@ else {
     Write-Host "Copied DICOM files: $copiedCount"
     $dicomdirRefCount = @($dicomdirRefs).Count
     Write-Host "DICOMDIR references discovered: $dicomdirRefCount"
+    if ($Deidentify) {
+        Write-Host "De-identified files: $deidentifiedCount"
+    }
 }
 Write-Host "Media folder: $mediaDir"
 Write-Host "DICOMDIR: $dicomdirPath"

@@ -89,6 +89,12 @@ Run a post-build DICOMDIR reference verification:
 .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -VerifyDicomdir
 ```
 
+Run with basic de-identification of copied output files:
+
+```powershell
+.\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Deidentify
+```
+
 ## Build Windows Executable (Option 1)
 
 This repository includes a build script that compiles `Collect-DicomMedia.ps1` into a Windows executable using `ps2exe` and stages required runtime files.
@@ -174,6 +180,8 @@ Options:
 - `-VerifyDicomdir` (optional): After processing, parse destination `DICOMDIR` and:
   - print a sample of `ReferencedFileID` entries,
   - warn when any entry does not start with the configured `-Subdir` prefix.
+- `-Deidentify` (optional): Apply basic de-identification to copied DICOM files in the destination media folder.
+  - Note: this is a pragmatic baseline tag scrub and not a complete regulatory de-identification workflow.
 
 ## Output
 

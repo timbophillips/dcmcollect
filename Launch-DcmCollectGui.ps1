@@ -35,6 +35,7 @@ $backendExe = Join-Path $scriptDir "dcmcollect.exe"
 $backendPs1 = Join-Path $scriptDir "Collect-DicomMedia.ps1"
 $iconPath = Join-Path $scriptDir "assets\dcmcollect.ico"
 $script:diagLogPath = Join-Path $scriptDir "gui-crash.log"
+$script:lastDest = $null
 
 function Write-Diagnostic {
     param([string]$Message)
@@ -80,7 +81,7 @@ $font = New-Object System.Drawing.Font("Segoe UI", 9)
 $form.Font = $font
 
 $lblIntro = New-Object System.Windows.Forms.Label
-$lblIntro.Text = "This tool collects DICOM files into a flat IMAGES folder, builds a DICOMDIR index, and can bundle Weasis for one-click viewing. Select source and destination, choose options, then run."
+$lblIntro.Text = "This tool collects DICOM files into a flat media folder, builds a DICOMDIR index, and can bundle Weasis for one-click viewing. Select source and destination, choose options, then run."
 $lblIntro.Location = New-Object System.Drawing.Point(16, 12)
 $lblIntro.Size = New-Object System.Drawing.Size(779, 42)
 
@@ -112,54 +113,54 @@ $btnDest.Text = "Browse..."
 $btnDest.Location = New-Object System.Drawing.Point(705, 136)
 $btnDest.Size = New-Object System.Drawing.Size(90, 28)
 
-$lblSubdirFixed = New-Object System.Windows.Forms.Label
-$lblSubdirFixed.Text = "Media subfolder is fixed to: IMAGES"
-$lblSubdirFixed.Location = New-Object System.Drawing.Point(16, 174)
-$lblSubdirFixed.Size = New-Object System.Drawing.Size(260, 22)
-
 $chkPackage = New-Object System.Windows.Forms.CheckBox
 $chkPackage.Text = "Package Weasis"
-$chkPackage.Location = New-Object System.Drawing.Point(16, 198)
+$chkPackage.Location = New-Object System.Drawing.Point(16, 174)
 $chkPackage.Size = New-Object System.Drawing.Size(130, 24)
 
 $chkVerify = New-Object System.Windows.Forms.CheckBox
 $chkVerify.Text = "Verify DICOMDIR"
-$chkVerify.Location = New-Object System.Drawing.Point(156, 198)
+$chkVerify.Location = New-Object System.Drawing.Point(156, 174)
 $chkVerify.Size = New-Object System.Drawing.Size(140, 24)
 
 $chkWeasisOnly = New-Object System.Windows.Forms.CheckBox
 $chkWeasisOnly.Text = "Weasis Only"
-$chkWeasisOnly.Location = New-Object System.Drawing.Point(306, 198)
+$chkWeasisOnly.Location = New-Object System.Drawing.Point(306, 174)
 $chkWeasisOnly.Size = New-Object System.Drawing.Size(110, 24)
+
+$chkDeidentify = New-Object System.Windows.Forms.CheckBox
+$chkDeidentify.Text = "De-identify Data"
+$chkDeidentify.Location = New-Object System.Drawing.Point(426, 174)
+$chkDeidentify.Size = New-Object System.Drawing.Size(130, 24)
 
 $btnRun = New-Object System.Windows.Forms.Button
 $btnRun.Text = "Run"
-$btnRun.Location = New-Object System.Drawing.Point(16, 236)
+$btnRun.Location = New-Object System.Drawing.Point(16, 212)
 $btnRun.Size = New-Object System.Drawing.Size(110, 34)
 
 $btnClose = New-Object System.Windows.Forms.Button
 $btnClose.Text = "Close"
-$btnClose.Location = New-Object System.Drawing.Point(136, 236)
+$btnClose.Location = New-Object System.Drawing.Point(136, 212)
 $btnClose.Size = New-Object System.Drawing.Size(110, 34)
 
 $progressBar = New-Object System.Windows.Forms.ProgressBar
-$progressBar.Location = New-Object System.Drawing.Point(270, 236)
+$progressBar.Location = New-Object System.Drawing.Point(270, 212)
 $progressBar.Size = New-Object System.Drawing.Size(525, 22)
 $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
 
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Text = "Ready"
-$lblStatus.Location = New-Object System.Drawing.Point(270, 261)
+$lblStatus.Location = New-Object System.Drawing.Point(270, 237)
 $lblStatus.Size = New-Object System.Drawing.Size(430, 24)
 
 $lblEta = New-Object System.Windows.Forms.Label
 $lblEta.Text = "ETA: --"
-$lblEta.Location = New-Object System.Drawing.Point(705, 261)
+$lblEta.Location = New-Object System.Drawing.Point(705, 237)
 $lblEta.Size = New-Object System.Drawing.Size(90, 24)
 
 $grpSummary = New-Object System.Windows.Forms.GroupBox
 $grpSummary.Text = "Run Summary"
-$grpSummary.Location = New-Object System.Drawing.Point(16, 288)
+$grpSummary.Location = New-Object System.Drawing.Point(16, 264)
 $grpSummary.Size = New-Object System.Drawing.Size(779, 64)
 
 $lblSumCandidates = New-Object System.Windows.Forms.Label
@@ -192,8 +193,8 @@ $grpSummary.Controls.AddRange(@(
 ))
 
 $txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Location = New-Object System.Drawing.Point(16, 360)
-$txtLog.Size = New-Object System.Drawing.Size(779, 211)
+$txtLog.Location = New-Object System.Drawing.Point(16, 336)
+$txtLog.Size = New-Object System.Drawing.Size(779, 235)
 $txtLog.Multiline = $true
 $txtLog.ScrollBars = "Vertical"
 $txtLog.ReadOnly = $true
@@ -203,8 +204,7 @@ $form.Controls.AddRange(@(
     $lblIntro,
     $lblSrc, $txtSrc, $btnSrc,
     $lblDest, $txtDest, $btnDest,
-    $lblSubdirFixed,
-    $chkPackage, $chkVerify, $chkWeasisOnly,
+    $chkPackage, $chkVerify, $chkWeasisOnly, $chkDeidentify,
     $btnRun, $btnClose, $progressBar, $lblStatus, $lblEta, $grpSummary, $txtLog
 ))
 
@@ -213,10 +213,7 @@ $uiTimer = New-Object System.Windows.Forms.Timer
 $uiTimer.Interval = 1000
 $uiTimer.Add_Tick({
     try {
-        [string]$queuedLine = $null
-        while ($script:logQueue -and $script:logQueue.TryDequeue([ref]$queuedLine)) {
-            Add-LogLine $queuedLine
-        }
+        Drain-ProcessOutputFiles
 
         if ($script:currentProcess) {
             if (-not $script:currentProcess.HasExited) {
@@ -233,8 +230,11 @@ $uiTimer.Add_Tick({
 })
 
 $script:currentProcess = $null
-$script:logQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $script:completionHandled = $true
+$script:stdoutPath = $null
+$script:stderrPath = $null
+$script:stdoutLineCount = 0
+$script:stderrLineCount = 0
 $script:progressTotal = 0
 $script:progressProcessed = 0
 $script:progressCopied = 0
@@ -406,6 +406,56 @@ function Add-LogLine {
     }
 }
 
+function Drain-ProcessOutputFiles {
+    if ($script:stdoutPath -and (Test-Path -LiteralPath $script:stdoutPath -PathType Leaf)) {
+        try {
+            $outLines = @(Get-Content -LiteralPath $script:stdoutPath -ErrorAction SilentlyContinue)
+            if ($outLines.Count -gt 0) {
+                for ($idx = $script:stdoutLineCount; $idx -lt $outLines.Count; $idx++) {
+                    Add-LogLine ([string]$outLines[$idx])
+                }
+                $script:stdoutLineCount = $outLines.Count
+            }
+        }
+        catch {
+            Write-Diagnostic ("Drain stdout error: " + $_.Exception.ToString())
+        }
+    }
+
+    if ($script:stderrPath -and (Test-Path -LiteralPath $script:stderrPath -PathType Leaf)) {
+        try {
+            $errLines = @(Get-Content -LiteralPath $script:stderrPath -ErrorAction SilentlyContinue)
+            if ($errLines.Count -gt 0) {
+                for ($idx = $script:stderrLineCount; $idx -lt $errLines.Count; $idx++) {
+                    Add-LogLine ("[ERR] " + [string]$errLines[$idx])
+                }
+                $script:stderrLineCount = $errLines.Count
+            }
+        }
+        catch {
+            Write-Diagnostic ("Drain stderr error: " + $_.Exception.ToString())
+        }
+    }
+}
+
+function Cleanup-ProcessOutputFiles {
+    foreach ($path in @($script:stdoutPath, $script:stderrPath)) {
+        if ($path) {
+            try {
+                Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                Write-Diagnostic ("Cleanup output file error: " + $_.Exception.ToString())
+            }
+        }
+    }
+
+    $script:stdoutPath = $null
+    $script:stderrPath = $null
+    $script:stdoutLineCount = 0
+    $script:stderrLineCount = 0
+}
+
 function Complete-Run {
     param([int]$ExitCode)
 
@@ -415,6 +465,7 @@ function Complete-Run {
 
     $script:completionHandled = $true
     try {
+        Drain-ProcessOutputFiles
         Set-RunningState -Running $false
         $lblStatus.Text = "Completed (ExitCode=$ExitCode)"
 
@@ -435,7 +486,22 @@ function Complete-Run {
         Update-Summary -State "Completed" -UpdateElapsed
         Add-LogLine ("Process exited with code $ExitCode")
         Write-Diagnostic ("Run completed with exit code " + $ExitCode)
+
+        if ($ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($script:lastDest) -and (Test-Path -LiteralPath $script:lastDest -PathType Container)) {
+            $choice = [System.Windows.Forms.MessageBox]::Show(
+                "Processing completed successfully. Open the destination folder?",
+                "dcmcollect",
+                [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            )
+
+            if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                Start-Process -FilePath "explorer.exe" -ArgumentList @($script:lastDest) | Out-Null
+            }
+        }
+
         $script:currentProcess = $null
+        Cleanup-ProcessOutputFiles
     }
     catch {
         Write-Diagnostic ("Complete-Run error: " + $_.Exception.ToString())
@@ -451,6 +517,7 @@ function Set-RunningState {
     $chkPackage.Enabled = -not $Running
     $chkVerify.Enabled = -not $Running
     $chkWeasisOnly.Enabled = -not $Running
+    $chkDeidentify.Enabled = -not $Running
     $txtSrc.Enabled = -not $Running
     $txtDest.Enabled = -not $Running
     if ($Running) {
@@ -540,27 +607,35 @@ $btnRun.Add_Click({
         if ($isWeasisOnly) {
             [void]$argsList.Add("-WeasisOnly")
         }
+        if ($chkDeidentify.Checked) {
+            [void]$argsList.Add("-Deidentify")
+        }
 
         $cmdPath = $null
-        $cmdArgs = $null
+        $cmdArgList = @()
+        $cmdArgsDisplay = $null
 
         if (Test-Path -LiteralPath $backendExe -PathType Leaf) {
             $cmdPath = $backendExe
-            $cmdArgs = ($argsList | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+            $cmdArgList = $argsList.ToArray()
         }
         elseif (Test-Path -LiteralPath $backendPs1 -PathType Leaf) {
             $cmdPath = "powershell.exe"
             $head = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $backendPs1)
-            $all = @($head + $argsList)
-            $cmdArgs = ($all | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+            $cmdArgList = @($head + $argsList.ToArray())
         }
         else {
             throw "Backend not found. Expected one of: $backendExe or $backendPs1"
         }
 
+        $cmdArgsDisplay = ($cmdArgList | ForEach-Object { ConvertTo-QuotedArgument $_ }) -join " "
+
         $txtLog.Clear()
-        $script:logQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+        $script:lastDest = $txtDest.Text.Trim()
         $script:completionHandled = $false
+        Cleanup-ProcessOutputFiles
+        $script:stdoutPath = [System.IO.Path]::GetTempFileName()
+        $script:stderrPath = [System.IO.Path]::GetTempFileName()
         $script:progressTotal = 0
         $script:progressProcessed = 0
         $script:progressCopied = 0
@@ -570,43 +645,26 @@ $btnRun.Add_Click({
         $script:scanSeconds = $null
         $script:dicomdirSeconds = $null
         Update-Summary -State "Starting"
-        Add-LogLine ("Command: {0} {1}" -f $cmdPath, $cmdArgs)
+        Add-LogLine ("Command: {0} {1}" -f $cmdPath, $cmdArgsDisplay)
+        Write-Diagnostic ("ArgCount=" + $cmdArgList.Count + "; Args=" + ($cmdArgList -join " | "))
 
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $cmdPath
-        $psi.Arguments = $cmdArgs
-        $psi.WorkingDirectory = $scriptDir
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
+        $startParams = @{
+            FilePath               = $cmdPath
+            ArgumentList           = $cmdArgList
+            WorkingDirectory       = $scriptDir
+            WindowStyle            = 'Hidden'
+            PassThru               = $true
+            RedirectStandardOutput = $script:stdoutPath
+            RedirectStandardError  = $script:stderrPath
+        }
 
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-        $proc.EnableRaisingEvents = $true
-
-        $proc.add_OutputDataReceived({
-            param($sender, $eventArgs)
-            if (-not [string]::IsNullOrWhiteSpace($eventArgs.Data)) {
-                [void]$script:logQueue.Enqueue($eventArgs.Data)
-            }
-        })
-
-        $proc.add_ErrorDataReceived({
-            param($sender, $eventArgs)
-            if (-not [string]::IsNullOrWhiteSpace($eventArgs.Data)) {
-                [void]$script:logQueue.Enqueue("[ERR] " + $eventArgs.Data)
-            }
-        })
-
-        if (-not $proc.Start()) {
+        $proc = Start-Process @startParams
+        if (-not $proc) {
             throw "Failed to start backend process."
         }
 
         $script:currentProcess = $proc
         Set-RunningState -Running $true
-        $proc.BeginOutputReadLine()
-        $proc.BeginErrorReadLine()
         Write-Diagnostic "Backend process started"
     }
     catch {
@@ -639,6 +697,7 @@ $form.Add_FormClosing({
 })
 
 $form.Add_FormClosed({
+    Cleanup-ProcessOutputFiles
     Write-Diagnostic "GUI closed"
 })
 

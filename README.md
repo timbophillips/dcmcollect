@@ -63,6 +63,12 @@ Package Weasis only into an existing destination folder (no DICOM copy/rebuild):
 .\Collect-DicomMedia.ps1 -Dest "C:\output_media" -WeasisOnly
 ```
 
+Run a post-build DICOMDIR reference verification:
+
+```powershell
+.\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -VerifyDicomdir
+```
+
 ### Parameters
 
 - `-Src` (required): Source root directory to scan.
@@ -74,6 +80,9 @@ Package Weasis only into an existing destination folder (no DICOM copy/rebuild):
 - `-WeasisOnly` (optional): Package Weasis and launchers only. Skips source scan, copy, catalogue, and DICOMDIR generation.
   - Requires `-Dest` to already exist.
   - Implies `-PackageWeasis`.
+- `-VerifyDicomdir` (optional): After processing, parse destination `DICOMDIR` and:
+  - print a sample of `ReferencedFileID` entries,
+  - warn when any entry does not start with the configured `-Subdir` prefix.
 
 ## Output
 

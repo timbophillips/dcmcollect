@@ -15,6 +15,7 @@
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis -WeasisSource "C:\tools\weasis-portable.zip"
     .\Collect-DicomMedia.ps1 -Dest "C:\output_media" -WeasisOnly
+        .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -VerifyDicomdir
 #>
 
 [CmdletBinding()]
@@ -38,7 +39,10 @@ param(
 ,
 
     [Parameter(Mandatory = $false)]
-    [switch]$WeasisOnly
+    [switch]$WeasisOnly,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$VerifyDicomdir
 )
 
 Set-StrictMode -Version Latest
@@ -113,6 +117,78 @@ function Get-DicomdirReferencedFiles {
     }
 
     return $results
+}
+
+function Get-DicomdirReferencedFileIds {
+    param(
+        [Parameter(Mandatory = $true)][string]$DicomdirPath,
+        [Parameter(Mandatory = $true)][string]$DcmDumpExe
+    )
+
+    $results = New-Object System.Collections.Generic.List[string]
+    if (-not (Test-Path -LiteralPath $DicomdirPath -PathType Leaf)) {
+        return $results
+    }
+
+    $lines = & $DcmDumpExe -q +P "ReferencedFileID" $DicomdirPath 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $results
+    }
+
+    foreach ($line in $lines) {
+        if ($line -match '\(0004,1500\).*\[(.*?)\]') {
+            $ref = $matches[1].Trim()
+            if (-not [string]::IsNullOrWhiteSpace($ref)) {
+                [void]$results.Add(($ref -replace '/', '\'))
+            }
+        }
+    }
+
+    return $results
+}
+
+function Invoke-DicomdirVerification {
+    param(
+        [Parameter(Mandatory = $true)][string]$DicomdirPath,
+        [Parameter(Mandatory = $true)][string]$MediaSubdir,
+        [Parameter(Mandatory = $true)][string]$DcmDumpExe
+    )
+
+    Write-Host "Verification: checking ReferencedFileID entries in DICOMDIR"
+
+    $refs = Get-DicomdirReferencedFileIds -DicomdirPath $DicomdirPath -DcmDumpExe $DcmDumpExe
+    if ($refs.Count -eq 0) {
+        Write-Warning "Verification: no ReferencedFileID entries were found."
+        return
+    }
+
+    $normalizedSubdir = ($MediaSubdir -replace '/', '\').Trim('\')
+    $expectedPrefix = "$normalizedSubdir\"
+    $mismatches = New-Object System.Collections.Generic.List[string]
+
+    foreach ($ref in $refs) {
+        if (-not ($ref.StartsWith($expectedPrefix, [System.StringComparison]::OrdinalIgnoreCase))) {
+            [void]$mismatches.Add($ref)
+        }
+    }
+
+    $sampleCount = [Math]::Min(10, $refs.Count)
+    Write-Host "Verification: sampled ReferencedFileID entries ($sampleCount of $($refs.Count)):"
+    for ($idx = 0; $idx -lt $sampleCount; $idx++) {
+        Write-Host ("  [{0}] {1}" -f ($idx + 1), $refs[$idx])
+    }
+
+    if ($mismatches.Count -gt 0) {
+        Write-Warning "Verification: found $($mismatches.Count) entries that do not start with '$expectedPrefix'."
+        $mismatchSample = [Math]::Min(5, $mismatches.Count)
+        Write-Host "Verification: mismatch examples:"
+        for ($idx = 0; $idx -lt $mismatchSample; $idx++) {
+            Write-Host ("  [X{0}] {1}" -f ($idx + 1), $mismatches[$idx])
+        }
+    }
+    else {
+        Write-Host "Verification: OK - all ReferencedFileID entries start with '$expectedPrefix'."
+    }
 }
 
 function Install-WeasisPackage {
@@ -297,7 +373,8 @@ if (-not $WeasisOnly) {
     # Build DICOMDIR (scan media subdir under DEST, write DEST\DICOMDIR)
     Push-Location -LiteralPath $DestFull
     try {
-        & $dcmmkdir +r +id $Subdir +D $dicomdirPath -v
+        # Keep input root at destination so ReferencedFileID is relative to DICOMDIR location.
+        & $dcmmkdir +r +id "." +D $dicomdirPath -v $Subdir
     }
     finally {
         Pop-Location
@@ -307,6 +384,14 @@ if (-not $WeasisOnly) {
 $weasisPackage = $null
 if ($PackageWeasis) {
     $weasisPackage = Install-WeasisPackage -SourcePath $WeasisSource -DestinationRoot $DestFull -MediaSubdir $Subdir -DicomdirPath $dicomdirPath
+}
+
+if ($VerifyDicomdir) {
+    if (-not (Test-Path -LiteralPath $dcmdump -PathType Leaf)) {
+        throw "Missing DCMTK binary required for verification: $dcmdump"
+    }
+
+    Invoke-DicomdirVerification -DicomdirPath $dicomdirPath -MediaSubdir $Subdir -DcmDumpExe $dcmdump
 }
 
 Write-Host "Done."

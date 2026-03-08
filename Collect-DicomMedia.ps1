@@ -48,14 +48,43 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# In PowerShell 7+, native tools that write informational lines to stderr can be
+# promoted to terminating errors under ErrorActionPreference=Stop.
+if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 function Resolve-FullPath {
     param([Parameter(Mandatory=$true)][string]$Path)
     try { return (Resolve-Path -LiteralPath $Path).Path }
     catch { return $Path }  # Dest may not exist yet
 }
 
+function Get-ScriptDirectory {
+    if ($PSScriptRoot -and (Test-Path -LiteralPath $PSScriptRoot -PathType Container)) {
+        return $PSScriptRoot
+    }
+
+    $myCommandPath = $null
+    if ($MyInvocation -and $MyInvocation.MyCommand) {
+        if ($MyInvocation.MyCommand -is [string]) {
+            $myCommandPath = $MyInvocation.MyCommand
+        }
+        elseif ($MyInvocation.MyCommand.PSObject.Properties.Match("Path").Count -gt 0) {
+            $myCommandPath = $MyInvocation.MyCommand.Path
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($myCommandPath)) {
+        return (Split-Path -Parent $myCommandPath)
+    }
+
+    # Fallback for compiled executable context.
+    return [System.AppContext]::BaseDirectory.TrimEnd([char]'\')
+}
+
 # --- Locate binaries relative to this script ---
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Get-ScriptDirectory
 $binDir    = Join-Path $scriptDir "bin"
 
 $dcmftest  = Join-Path $binDir "dcmftest.exe"
@@ -244,7 +273,7 @@ function Install-WeasisPackage {
     $weasisExe = $exeCandidates[0].FullName
 
     # Keep launcher portable by resolving executable at runtime from destination root.
-    $weasisExeRel = $weasisExe.Substring($DestinationRoot.Length).TrimStart('\\','/')
+    $weasisExeRel = $weasisExe.Substring($DestinationRoot.Length).TrimStart([char]'\', [char]'/')
 
     $launcherPs1 = Join-Path $DestinationRoot "Launch-Weasis.ps1"
     $launcherCmd = Join-Path $DestinationRoot "Launch-Weasis.cmd"
@@ -263,10 +292,10 @@ if (-not (Test-Path -LiteralPath `$weasisExe -PathType Leaf)) {
 # Weasis portable launchers only forward arguments that start with '$' or 'weasis://'.
 # Use an encoded weasis:// URI and include IMAGES as fallback input.
 if (Test-Path -LiteralPath `$dicomdir -PathType Leaf) {
-    `$startupCmd = ('$dicom:get -l "{0}" -l "{1}"' -f (`$dicomdir -replace '\\', '/'), (`$mediaDir -replace '\\', '/'))
+    `$startupCmd = ('`$dicom:get -l "{0}" -l "{1}"' -f (`$dicomdir -replace '\\', '/'), (`$mediaDir -replace '\\', '/'))
 }
 else {
-    `$startupCmd = ('$dicom:get -l "{0}"' -f (`$mediaDir -replace '\\', '/'))
+    `$startupCmd = ('`$dicom:get -l "{0}"' -f (`$mediaDir -replace '\\', '/'))
 }
 
 `$startupArg = ('weasis://?{0}' -f [uri]::EscapeDataString(`$startupCmd))
@@ -339,24 +368,44 @@ $dicomdirRefs = @()
 $copiedCount = 0
 
 if (-not $WeasisOnly) {
+    $discoveryWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
     # Catalogue file
     "seq,new_filename,source_path" | Set-Content -Encoding ASCII $catalog
 
     $candidateFiles = New-Object System.Collections.Generic.List[string]
+    $discoveredCandidates = 0
+
     Get-ChildItem -LiteralPath $SrcFull -Recurse -File -Force | ForEach-Object {
         [void]$candidateFiles.Add($_.FullName)
+        $discoveredCandidates++
+        Write-Output ("DISCOVER|COUNT={0}|FILE={1}" -f $discoveredCandidates, $_.FullName)
+        Write-Output ("Found candidate [{0}] {1}" -f $discoveredCandidates, $_.FullName)
     }
 
     $dicomdirRefs = Get-DicomdirReferencedFiles -SourceRoot $SrcFull -DcmDumpExe $dcmdump
     foreach ($refFile in $dicomdirRefs) {
         [void]$candidateFiles.Add($refFile)
+        $discoveredCandidates++
+        Write-Output ("DISCOVER|COUNT={0}|FILE={1}" -f $discoveredCandidates, $refFile)
+        Write-Output ("Found candidate [{0}] {1}" -f $discoveredCandidates, $refFile)
     }
 
+    $totalCandidates = $candidateFiles.Count
+    $discoveryWatch.Stop()
+    Write-Output ("STAT|TOTAL_CANDIDATES={0}" -f $totalCandidates)
+    Write-Output ("PHASE|DISCOVERY_SECONDS={0:N2}" -f $discoveryWatch.Elapsed.TotalSeconds)
+
+    $scanWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     $i = 1
+    $processedCandidates = 0
 
     foreach ($f in $candidateFiles) {
+        $processedCandidates++
+
         if (-not $seen.Add($f)) {
+            Write-Output ("PROGRESS|PROCESSED={0}|COPIED={1}|CURRENT={2}" -f $processedCandidates, ($i - 1), $f)
             continue
         }
 
@@ -366,6 +415,7 @@ if (-not $WeasisOnly) {
             $outAbs = Join-Path $DestFull $outRel
 
             Copy-Item -LiteralPath $f -Destination $outAbs -Force
+            Write-Output ("Copied [{0}] {1} <= {2}" -f $i, $outRel, $f)
 
             # CSV-escape quotes
             $escaped = $f.Replace('"','""')
@@ -373,18 +423,55 @@ if (-not $WeasisOnly) {
 
             $i++
         }
+
+        Write-Output ("PROGRESS|PROCESSED={0}|COPIED={1}|CURRENT={2}" -f $processedCandidates, ($i - 1), $f)
     }
+
+    $scanWatch.Stop()
+    Write-Output ("PHASE|SCAN_SECONDS={0:N2}" -f $scanWatch.Elapsed.TotalSeconds)
 
     $copiedCount = $i - 1
 
-    # Build DICOMDIR (scan media subdir under DEST, write DEST\DICOMDIR)
-    Push-Location -LiteralPath $DestFull
+    # Build DICOMDIR (scan media subdir under DEST, write DEST\DICOMDIR).
+    # Use Start-Process with redirected streams to avoid PowerShell native stderr promotion.
+    $dicomdirWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $stdoutFile = [System.IO.Path]::GetTempFileName()
+    $stderrFile = [System.IO.Path]::GetTempFileName()
     try {
-        # Keep input root at destination so ReferencedFileID is relative to DICOMDIR location.
-        & $dcmmkdir +r +id "." +D $dicomdirPath -v $Subdir
+        $dcmmkdirStartParams = @{
+            FilePath               = $dcmmkdir
+            ArgumentList           = @('+r', '+id', '.', '+D', $dicomdirPath, '-v', $Subdir)
+            WorkingDirectory       = $DestFull
+            NoNewWindow            = $true
+            Wait                   = $true
+            PassThru               = $true
+            RedirectStandardOutput = $stdoutFile
+            RedirectStandardError  = $stderrFile
+        }
+
+        $proc = Start-Process @dcmmkdirStartParams
+
+        foreach ($line in (Get-Content -LiteralPath $stdoutFile -ErrorAction SilentlyContinue)) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                Write-Output $line
+            }
+        }
+
+        foreach ($line in (Get-Content -LiteralPath $stderrFile -ErrorAction SilentlyContinue)) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                Write-Output $line
+            }
+        }
+
+        if ($proc.ExitCode -ne 0) {
+            throw "dcmmkdir failed with exit code $($proc.ExitCode)"
+        }
     }
     finally {
-        Pop-Location
+        Remove-Item -LiteralPath $stdoutFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
+        $dicomdirWatch.Stop()
+        Write-Output ("PHASE|DICOMDIR_SECONDS={0:N2}" -f $dicomdirWatch.Elapsed.TotalSeconds)
     }
 }
 
@@ -407,7 +494,8 @@ if ($WeasisOnly) {
 }
 else {
     Write-Host "Copied DICOM files: $copiedCount"
-    Write-Host "DICOMDIR references discovered: $($dicomdirRefs.Count)"
+    $dicomdirRefCount = @($dicomdirRefs).Count
+    Write-Host "DICOMDIR references discovered: $dicomdirRefCount"
 }
 Write-Host "Media folder: $mediaDir"
 Write-Host "DICOMDIR: $dicomdirPath"

@@ -13,6 +13,8 @@
   .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media"
   .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Subdir "IMAGES"
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Deidentify
+    .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Deidentify -SkipDicomdir
+    .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -Deidentify -SkipDicomdir -ThrottleLimit 8
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis
     .\Collect-DicomMedia.ps1 -Src "C:\input" -Dest "C:\output_media" -PackageWeasis -WeasisSource "C:\tools\weasis-portable.zip"
     .\Collect-DicomMedia.ps1 -Dest "C:\output_media" -WeasisOnly
@@ -46,7 +48,14 @@ param(
     [switch]$VerifyDicomdir
 ,
     [Parameter(Mandatory = $false)]
-    [switch]$Deidentify
+    [switch]$Deidentify,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipDicomdir,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 64)]
+    [int]$ThrottleLimit = [Math]::Min(8, [Environment]::ProcessorCount)
 )
 
 Set-StrictMode -Version Latest
@@ -95,62 +104,6 @@ $dcmftest  = Join-Path $binDir "dcmftest.exe"
 $dcmdump   = Join-Path $binDir "dcmdump.exe"
 $dcmmkdir  = Join-Path $binDir "dcmmkdir.exe"
 $dcmodify  = Join-Path $binDir "dcmodify.exe"
-
-function Invoke-DeidentifyDicom {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [Parameter(Mandatory = $true)][string]$DcmodifyExe
-    )
-
-    # Basic de-identification profile: overwrite a core set of direct identifiers.
-    $args = @(
-        '-q',
-        '-nb',
-        '-ie',
-        '-imt',
-        '-ma', '(0010,0010)=ANON^PATIENT',
-        '-ma', '(0010,0020)=ANONID',
-        '-ma', '(0010,0030)=',
-        '-ma', '(0010,0040)=O',
-        '-ma', '(0010,1000)=',
-        '-ma', '(0010,1040)=',
-        '-ma', '(0008,0050)=',
-        '-ma', '(0008,0090)=',
-        '-ma', '(0008,0080)=',
-        '-ma', '(0008,0081)=',
-        '-ma', '(0008,1010)=',
-        '-ma', '(0008,1030)=ANON_STUDY',
-        '-ma', '(0008,103E)=ANON_SERIES',
-        $FilePath
-    )
-
-    $outFile = [System.IO.Path]::GetTempFileName()
-    $errFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $startParams = @{
-            FilePath               = $DcmodifyExe
-            ArgumentList           = $args
-            NoNewWindow            = $true
-            Wait                   = $true
-            PassThru               = $true
-            RedirectStandardOutput = $outFile
-            RedirectStandardError  = $errFile
-        }
-        $proc = Start-Process @startParams
-
-        if ($proc.ExitCode -ne 0) {
-            $errText = (Get-Content -LiteralPath $errFile -ErrorAction SilentlyContinue | Out-String).Trim()
-            if ([string]::IsNullOrWhiteSpace($errText)) {
-                throw "dcmodify failed with exit code $($proc.ExitCode) for file: $FilePath"
-            }
-            throw "dcmodify failed with exit code $($proc.ExitCode) for file: $FilePath`n$errText"
-        }
-    }
-    finally {
-        Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
-    }
-}
 
 function Test-IsDicom {
     param(
@@ -435,6 +388,7 @@ $dicomdirRefs = @()
 $copiedCount = 0
 $deidentifiedCount = 0
 $deidentifyErrorCount = 0
+$copiedFiles = New-Object System.Collections.Generic.List[string]
 
 if (-not $WeasisOnly) {
     $discoveryWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -493,17 +447,7 @@ if (-not $WeasisOnly) {
             Copy-Item -LiteralPath $f -Destination $outAbs -Force
             Write-Output ("Copied [{0}] {1} <= {2}" -f $i, $outRel, $f)
 
-            if ($Deidentify) {
-                try {
-                    Invoke-DeidentifyDicom -FilePath $outAbs -DcmodifyExe $dcmodify
-                    $deidentifiedCount++
-                    Write-Output ("De-identified [{0}] {1}" -f $deidentifiedCount, $outRel)
-                }
-                catch {
-                    $deidentifyErrorCount++
-                    Write-Warning ("De-identification failed for '{0}': {1}" -f $outRel, $_.Exception.Message)
-                }
-            }
+            [void]$copiedFiles.Add($outAbs)
 
             # CSV-escape quotes
             $escaped = $f.Replace('"','""')
@@ -520,8 +464,134 @@ if (-not $WeasisOnly) {
 
     $copiedCount = $i - 1
 
+    # --- De-identification phase (batched per 100 files, parallel when PS7+) ---
+    if ($Deidentify -and $copiedFiles.Count -gt 0) {
+        $deidentifyWatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $batchSize = 100
+
+        # Create batches of 100 files each
+        $batches = New-Object System.Collections.Generic.List[object]
+        for ($b = 0; $b -lt $copiedFiles.Count; $b += $batchSize) {
+            $end = [Math]::Min($b + $batchSize, $copiedFiles.Count)
+            $batch = $copiedFiles.GetRange($b, $end - $b)
+            [void]$batches.Add($batch)
+        }
+
+        Write-Output ("Starting de-identification of {0} files in {1} batches (100 files/batch, ThrottleLimit={2})..." -f $copiedFiles.Count, $batches.Count, $ThrottleLimit)
+
+        if ($PSVersionTable.PSVersion.Major -ge 7 -and $batches.Count -gt 1) {
+            $deidentifyResults = $batches | ForEach-Object -ThrottleLimit $ThrottleLimit -Parallel {
+                $batch = $_
+                $dcmodifyExe = $using:dcmodify
+                $modArgs = @(
+                    '-q', '-nb', '-ie', '-imt',
+                    '-ma', '(0010,0010)=ANON^PATIENT',
+                    '-ma', '(0010,0020)=ANONID',
+                    '-ma', '(0010,0030)=',
+                    '-ma', '(0010,0040)=O',
+                    '-ma', '(0010,1000)=',
+                    '-ma', '(0010,1040)=',
+                    '-ma', '(0008,0050)=',
+                    '-ma', '(0008,0090)=',
+                    '-ma', '(0008,0080)=',
+                    '-ma', '(0008,0081)=',
+                    '-ma', '(0008,1010)=',
+                    '-ma', '(0008,1030)=ANON_STUDY',
+                    '-ma', '(0008,103E)=ANON_SERIES'
+                )
+                # Append all batch files to the argument list
+                $modArgs += @($batch)
+
+                $outFile = [System.IO.Path]::GetTempFileName()
+                $errFile = [System.IO.Path]::GetTempFileName()
+                try {
+                    $proc = Start-Process -FilePath $dcmodifyExe -ArgumentList $modArgs `
+                        -NoNewWindow -Wait -PassThru `
+                        -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+                    $errText = if ($proc.ExitCode -ne 0) {
+                        (Get-Content -LiteralPath $errFile -ErrorAction SilentlyContinue | Out-String).Trim()
+                    } else { '' }
+                    [pscustomobject]@{ Batch = $batch; Success = ($proc.ExitCode -eq 0); Error = $errText }
+                }
+                catch {
+                    [pscustomobject]@{ Batch = $batch; Success = $false; Error = $_.Exception.Message }
+                }
+                finally {
+                    Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            foreach ($result in $deidentifyResults) {
+                if ($result.Success) {
+                    $deidentifiedCount += $result.Batch.Count
+                    Write-Output ("De-identified batch of {0} files" -f $result.Batch.Count)
+                }
+                else {
+                    $failedCount = $result.Batch.Count
+                    $deidentifyErrorCount += $failedCount
+                    Write-Warning ("De-identification failed for batch of {0} files: {1}" -f $failedCount, $result.Error)
+                }
+            }
+        }
+        else {
+            # Sequential fallback (PS5 or single batch)
+            foreach ($batch in $batches) {
+                $modArgs = @(
+                    '-q', '-nb', '-ie', '-imt',
+                    '-ma', '(0010,0010)=ANON^PATIENT',
+                    '-ma', '(0010,0020)=ANONID',
+                    '-ma', '(0010,0030)=',
+                    '-ma', '(0010,0040)=O',
+                    '-ma', '(0010,1000)=',
+                    '-ma', '(0010,1040)=',
+                    '-ma', '(0008,0050)=',
+                    '-ma', '(0008,0090)=',
+                    '-ma', '(0008,0080)=',
+                    '-ma', '(0008,0081)=',
+                    '-ma', '(0008,1010)=',
+                    '-ma', '(0008,1030)=ANON_STUDY',
+                    '-ma', '(0008,103E)=ANON_SERIES'
+                )
+                $modArgs += @($batch)
+
+                try {
+                    $outFile = [System.IO.Path]::GetTempFileName()
+                    $errFile = [System.IO.Path]::GetTempFileName()
+                    try {
+                        $proc = Start-Process -FilePath $dcmodify -ArgumentList $modArgs `
+                            -NoNewWindow -Wait -PassThru `
+                            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+
+                        if ($proc.ExitCode -eq 0) {
+                            $deidentifiedCount += $batch.Count
+                            Write-Output ("De-identified batch of {0} files" -f $batch.Count)
+                        }
+                        else {
+                            $errText = (Get-Content -LiteralPath $errFile -ErrorAction SilentlyContinue | Out-String).Trim()
+                            $deidentifyErrorCount += $batch.Count
+                            Write-Warning ("De-identification failed for batch of {0} files: {1}" -f $batch.Count, $errText)
+                        }
+                    }
+                    finally {
+                        Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                catch {
+                    $deidentifyErrorCount += $batch.Count
+                    Write-Warning ("De-identification failed for batch of {0} files: {1}" -f $batch.Count, $_.Exception.Message)
+                }
+            }
+        }
+
+        $deidentifyWatch.Stop()
+        Write-Output ("PHASE|DEIDENTIFY_SECONDS={0:N2}" -f $deidentifyWatch.Elapsed.TotalSeconds)
+    }
+
     # Build DICOMDIR (scan media subdir under DEST, write DEST\DICOMDIR).
     # Use Start-Process with redirected streams to avoid PowerShell native stderr promotion.
+    if (-not $SkipDicomdir) {
     $dicomdirWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $stdoutFile = [System.IO.Path]::GetTempFileName()
     $stderrFile = [System.IO.Path]::GetTempFileName()
@@ -561,6 +631,7 @@ if (-not $WeasisOnly) {
         $dicomdirWatch.Stop()
         Write-Output ("PHASE|DICOMDIR_SECONDS={0:N2}" -f $dicomdirWatch.Elapsed.TotalSeconds)
     }
+    } # end if (-not $SkipDicomdir)
 }
 
 $weasisPackage = $null
@@ -592,7 +663,12 @@ else {
     }
 }
 Write-Host "Media folder: $mediaDir"
-Write-Host "DICOMDIR: $dicomdirPath"
+if (-not $SkipDicomdir) {
+    Write-Host "DICOMDIR: $dicomdirPath"
+}
+else {
+    Write-Host "DICOMDIR: skipped (-SkipDicomdir)"
+}
 if (-not $WeasisOnly) {
     Write-Host "Catalogue: $catalog"
 }

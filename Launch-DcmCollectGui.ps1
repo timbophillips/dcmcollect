@@ -65,8 +65,8 @@ function ConvertTo-QuotedArgument {
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "dcmcollect"
 $form.StartPosition = "CenterScreen"
-$form.Size = New-Object System.Drawing.Size(820, 620)
-$form.MinimumSize = New-Object System.Drawing.Size(820, 620)
+$form.Size = New-Object System.Drawing.Size(820, 656)
+$form.MinimumSize = New-Object System.Drawing.Size(820, 656)
 
 if (Test-Path -LiteralPath $iconPath -PathType Leaf) {
     try {
@@ -133,34 +133,53 @@ $chkDeidentify.Text = "De-identify Data"
 $chkDeidentify.Location = New-Object System.Drawing.Point(426, 174)
 $chkDeidentify.Size = New-Object System.Drawing.Size(130, 24)
 
+$chkSkipDicomdir = New-Object System.Windows.Forms.CheckBox
+$chkSkipDicomdir.Text = "Skip DICOMDIR"
+$chkSkipDicomdir.Location = New-Object System.Drawing.Point(16, 204)
+$chkSkipDicomdir.Size = New-Object System.Drawing.Size(130, 24)
+
+$lblThrottle = New-Object System.Windows.Forms.Label
+$lblThrottle.Text = "Workers:"
+$lblThrottle.Location = New-Object System.Drawing.Point(160, 206)
+$lblThrottle.Size = New-Object System.Drawing.Size(60, 22)
+$lblThrottle.Enabled = $false
+
+$nudThrottle = New-Object System.Windows.Forms.NumericUpDown
+$nudThrottle.Location = New-Object System.Drawing.Point(222, 204)
+$nudThrottle.Size = New-Object System.Drawing.Size(56, 24)
+$nudThrottle.Minimum = 1
+$nudThrottle.Maximum = 64
+$nudThrottle.Value = [Math]::Min(8, [Environment]::ProcessorCount)
+$nudThrottle.Enabled = $false
+
 $btnRun = New-Object System.Windows.Forms.Button
 $btnRun.Text = "Run"
-$btnRun.Location = New-Object System.Drawing.Point(16, 212)
+$btnRun.Location = New-Object System.Drawing.Point(16, 244)
 $btnRun.Size = New-Object System.Drawing.Size(110, 34)
 
 $btnClose = New-Object System.Windows.Forms.Button
 $btnClose.Text = "Close"
-$btnClose.Location = New-Object System.Drawing.Point(136, 212)
+$btnClose.Location = New-Object System.Drawing.Point(136, 244)
 $btnClose.Size = New-Object System.Drawing.Size(110, 34)
 
 $progressBar = New-Object System.Windows.Forms.ProgressBar
-$progressBar.Location = New-Object System.Drawing.Point(270, 212)
+$progressBar.Location = New-Object System.Drawing.Point(270, 244)
 $progressBar.Size = New-Object System.Drawing.Size(525, 22)
 $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
 
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Text = "Ready"
-$lblStatus.Location = New-Object System.Drawing.Point(270, 237)
+$lblStatus.Location = New-Object System.Drawing.Point(270, 269)
 $lblStatus.Size = New-Object System.Drawing.Size(430, 24)
 
 $lblEta = New-Object System.Windows.Forms.Label
 $lblEta.Text = "ETA: --"
-$lblEta.Location = New-Object System.Drawing.Point(705, 237)
+$lblEta.Location = New-Object System.Drawing.Point(705, 269)
 $lblEta.Size = New-Object System.Drawing.Size(90, 24)
 
 $grpSummary = New-Object System.Windows.Forms.GroupBox
 $grpSummary.Text = "Run Summary"
-$grpSummary.Location = New-Object System.Drawing.Point(16, 264)
+$grpSummary.Location = New-Object System.Drawing.Point(16, 296)
 $grpSummary.Size = New-Object System.Drawing.Size(779, 64)
 
 $lblSumCandidates = New-Object System.Windows.Forms.Label
@@ -193,7 +212,7 @@ $grpSummary.Controls.AddRange(@(
 ))
 
 $txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Location = New-Object System.Drawing.Point(16, 336)
+$txtLog.Location = New-Object System.Drawing.Point(16, 368)
 $txtLog.Size = New-Object System.Drawing.Size(779, 235)
 $txtLog.Multiline = $true
 $txtLog.ScrollBars = "Vertical"
@@ -205,6 +224,7 @@ $form.Controls.AddRange(@(
     $lblSrc, $txtSrc, $btnSrc,
     $lblDest, $txtDest, $btnDest,
     $chkPackage, $chkVerify, $chkWeasisOnly, $chkDeidentify,
+    $chkSkipDicomdir, $lblThrottle, $nudThrottle,
     $btnRun, $btnClose, $progressBar, $lblStatus, $lblEta, $grpSummary, $txtLog
 ))
 
@@ -243,6 +263,7 @@ $script:runStart = $null
 $script:discoverySeconds = $null
 $script:scanSeconds = $null
 $script:dicomdirSeconds = $null
+$script:deidentifySeconds = $null
 
 function Format-Duration {
     param([TimeSpan]$Span)
@@ -367,6 +388,13 @@ function Update-ProgressFromLine {
     if ($Line -match '^PHASE\|SCAN_SECONDS=([0-9]+(?:\.[0-9]+)?)$') {
         $script:scanSeconds = [double]$matches[1]
         $lblStatus.Text = ("Candidate scan completed in {0:N2}s" -f $script:scanSeconds)
+        Update-Summary -State "De-identifying" -UpdateElapsed
+        return $true
+    }
+
+    if ($Line -match '^PHASE\|DEIDENTIFY_SECONDS=([0-9]+(?:\.[0-9]+)?)$') {
+        $script:deidentifySeconds = [double]$matches[1]
+        $lblStatus.Text = ("De-identification completed in {0:N2}s" -f $script:deidentifySeconds)
         Update-Summary -State "Building DICOMDIR" -UpdateElapsed
         return $true
     }
@@ -479,6 +507,9 @@ function Complete-Run {
         if ($script:scanSeconds -ne $null) {
             Add-LogLine ("Phase timing: scan={0:N2}s" -f $script:scanSeconds)
         }
+        if ($script:deidentifySeconds -ne $null) {
+            Add-LogLine ("Phase timing: deidentify={0:N2}s" -f $script:deidentifySeconds)
+        }
         if ($script:dicomdirSeconds -ne $null) {
             Add-LogLine ("Phase timing: dicomdir={0:N2}s" -f $script:dicomdirSeconds)
         }
@@ -518,6 +549,9 @@ function Set-RunningState {
     $chkVerify.Enabled = -not $Running
     $chkWeasisOnly.Enabled = -not $Running
     $chkDeidentify.Enabled = -not $Running
+    $chkSkipDicomdir.Enabled = -not $Running
+    $nudThrottle.Enabled = (-not $Running) -and $chkDeidentify.Checked
+    $lblThrottle.Enabled = (-not $Running) -and $chkDeidentify.Checked
     $txtSrc.Enabled = -not $Running
     $txtDest.Enabled = -not $Running
     if ($Running) {
@@ -571,6 +605,22 @@ $chkWeasisOnly.Add_CheckedChanged({
     $btnSrc.Enabled = -not $isWeasisOnly
 })
 
+$chkSkipDicomdir.Add_CheckedChanged({
+    $skip = $chkSkipDicomdir.Checked
+    $chkVerify.Enabled = -not $skip
+    $chkPackage.Enabled = -not $skip
+    if ($skip) {
+        $chkVerify.Checked = $false
+        $chkPackage.Checked = $false
+    }
+})
+
+$chkDeidentify.Add_CheckedChanged({
+    $enabled = $chkDeidentify.Checked
+    $nudThrottle.Enabled = $enabled
+    $lblThrottle.Enabled = $enabled
+})
+
 $btnRun.Add_Click({
     try {
         Write-Diagnostic "Run clicked"
@@ -609,6 +659,11 @@ $btnRun.Add_Click({
         }
         if ($chkDeidentify.Checked) {
             [void]$argsList.Add("-Deidentify")
+            [void]$argsList.Add("-ThrottleLimit")
+            [void]$argsList.Add([string][int]$nudThrottle.Value)
+        }
+        if ($chkSkipDicomdir.Checked) {
+            [void]$argsList.Add("-SkipDicomdir")
         }
 
         $cmdPath = $null
@@ -646,6 +701,7 @@ $btnRun.Add_Click({
         $script:discoverySeconds = $null
         $script:scanSeconds = $null
         $script:dicomdirSeconds = $null
+        $script:deidentifySeconds = $null
         Update-Summary -State "Starting"
         Add-LogLine ("Command: {0} {1}" -f $cmdPath, $cmdArgsDisplay)
         Write-Diagnostic ("ArgCount=" + $cmdArgList.Count + "; Args=" + ($cmdArgList -join " | "))
@@ -653,7 +709,7 @@ $btnRun.Add_Click({
 
         $startParams = @{
             FilePath               = $cmdPath
-            ArgumentList           = $cmdArgString
+            ArgumentList           = $cmdArgList
             WorkingDirectory       = $scriptDir
             WindowStyle            = 'Hidden'
             PassThru               = $true

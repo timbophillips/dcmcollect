@@ -1,0 +1,48 @@
+2026-06-21 16:11:16.790 GUI started
+2026-06-21 16:13:12.003 Run clicked
+2026-06-21 16:13:12.066 ArgCount=15; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 | -Dest | C:\Users\timot\Downloads\SR-deID | -Subdir | IMAGES | -Deidentify | -ThrottleLimit | 8 | -SkipDicomdir
+2026-06-21 16:13:12.075 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 -Dest C:\Users\timot\Downloads\SR-deID -Subdir IMAGES -Deidentify -ThrottleLimit 8 -SkipDicomdir
+2026-06-21 16:13:12.137 Backend process started
+2026-06-21 16:15:15.636 GUI closed
+2026-06-21 16:15:18.396 GUI started
+2026-06-21 16:16:42.553 Run clicked
+2026-06-21 16:16:42.568 ArgCount=15; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 | -Dest | C:\Users\timot\Downloads\SR2 | -Subdir | IMAGES | -PackageWeasis | -Deidentify | -ThrottleLimit | 20
+2026-06-21 16:16:42.576 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 -Dest C:\Users\timot\Downloads\SR2 -Subdir IMAGES -PackageWeasis -Deidentify -ThrottleLimit 20
+2026-06-21 16:16:42.626 Backend process started
+2026-06-22 18:08:46.619 GUI started
+2026-06-22 18:09:32.937 Run clicked
+2026-06-22 18:09:33.078 ArgCount=14; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 | -Dest | C:\Users\timot\Downloads\SR4 | -Subdir | IMAGES | -Deidentify | -ThrottleLimit | 8
+2026-06-22 18:09:33.095 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 -Dest C:\Users\timot\Downloads\SR4 -Subdir IMAGES -Deidentify -ThrottleLimit 8
+2026-06-22 18:09:33.193 Backend process started
+2026-06-22 18:37:41.862 GUI closed
+2026-06-22 18:40:51.863 GUI started
+2026-06-22 18:41:23.872 Run clicked
+2026-06-22 18:41:24.003 ArgCount=14; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026\DICOM | -Dest | C:\Users\timot\Downloads\SR5 | -Subdir | IMAGES | -Deidentify | -ThrottleLimit | 8
+2026-06-22 18:41:24.021 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026\DICOM -Dest C:\Users\timot\Downloads\SR5 -Subdir IMAGES -Deidentify -ThrottleLimit 8
+2026-06-22 18:41:24.178 Backend process started
+2026-06-22 19:11:44.456 GUI closed
+2026-06-22 19:11:51.989 GUI started
+2026-06-22 19:12:41.213 Run clicked
+2026-06-22 19:12:41.251 ArgCount=15; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 | -Dest | C:\Users\timot\Downloads\SR6 | -Subdir | IMAGES | -Deidentify | -ThrottleLimit | 8 | -SkipDicomdir
+2026-06-22 19:12:41.267 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 -Dest C:\Users\timot\Downloads\SR6 -Subdir IMAGES -Deidentify -ThrottleLimit 8 -SkipDicomdir
+2026-06-22 19:12:41.328 Backend process started
+2026-06-23 11:53:42.915 Run completed with exit code 0
+2026-06-23 11:57:49.504 GUI closed
+2026-06-23 12:30:38.587 GUI started
+2026-06-23 12:31:11.558 Run clicked
+2026-06-23 12:31:11.592 ArgCount=16; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\BiSync\SR-MRI-Feb-2026 | -Dest | C:\Users\timot\Downloads\SR7 | -Subdir | IMAGES | -PackageWeasis | -VerifyDicomdir | -Deidentify | -ThrottleLimit | 8
+2026-06-23 12:31:11.607 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\BiSync\SR-MRI-Feb-2026 -Dest C:\Users\timot\Downloads\SR7 -Subdir IMAGES -PackageWeasis -VerifyDicomdir -Deidentify -ThrottleLimit 8
+2026-06-23 12:31:11.644 Backend process started
+2026-06-23 12:31:25.033 Run completed with exit code 0
+2026-06-23 12:39:28.894 Run clicked
+2026-06-23 12:39:28.930 ArgCount=16; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 | -Dest | C:\Users\timot\Downloads\SR8 | -Subdir | IMAGES | -PackageWeasis | -VerifyDicomdir | -Deidentify | -ThrottleLimit | 8
+2026-06-23 12:39:28.940 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\OneDrive\Desktop\SR-MRI-Feb-2026 -Dest C:\Users\timot\Downloads\SR8 -Subdir IMAGES -PackageWeasis -VerifyDicomdir -Deidentify -ThrottleLimit 8
+2026-06-23 12:39:28.991 Backend process started
+2026-06-23 12:58:58.687 Run completed with exit code 0
+2026-06-23 21:54:53.609 GUI closed
+2026-07-21 12:35:27.708 GUI started
+2026-07-21 12:36:04.703 Run clicked
+2026-07-21 12:36:04.908 ArgCount=13; Args=-NoProfile | -ExecutionPolicy | Bypass | -File | C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 | -Src | C:\Users\timot\Downloads\DICOM-20260721T193007Z-1-001\DICOM | -Dest | C:\Users\timot\Downloads\wmc-spine | -Subdir | IMAGES | -PackageWeasis | -VerifyDicomdir
+2026-07-21 12:36:04.942 ArgString=-NoProfile -ExecutionPolicy Bypass -File C:\Users\timot\code\dcmcollect\Collect-DicomMedia.ps1 -Src C:\Users\timot\Downloads\DICOM-20260721T193007Z-1-001\DICOM -Dest C:\Users\timot\Downloads\wmc-spine -Subdir IMAGES -PackageWeasis -VerifyDicomdir
+2026-07-21 12:36:05.164 Backend process started
+2026-07-21 12:37:02.532 Run completed with exit code 1
